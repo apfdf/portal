@@ -2,4 +2,5 @@
 broooooo my days
 
 För att kunna kompilera detta rep måste du ha:
-- OpenGL
+- g++
+använd sen bara makefilen

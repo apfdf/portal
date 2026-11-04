@@ -1,3 +1,0 @@
-C:/Users/manse/Documents/programmering/portal/build/CMakeFiles/portal.dir
-C:/Users/manse/Documents/programmering/portal/build/CMakeFiles/edit_cache.dir
-C:/Users/manse/Documents/programmering/portal/build/CMakeFiles/rebuild_cache.dir
