@@ -1,0 +1,8 @@
+[
+{
+  "directory": "C:/Users/manse/Documents/programmering/portal/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe  @CMakeFiles\\portal.dir\\includes_CXX.rsp -g -o CMakeFiles\\portal.dir\\main.cpp.obj -c C:\\Users\\manse\\Documents\\programmering\\portal\\main.cpp",
+  "file": "C:/Users/manse/Documents/programmering/portal/main.cpp",
+  "output": "CMakeFiles/portal.dir/main.cpp.obj"
+}
+]
