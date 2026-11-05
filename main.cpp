@@ -3,7 +3,7 @@
 
 SDL3 är window och textures och bla bla bla
 glad är opengl funktioner
-glm är typ linjär aLgebra
+glm är linjär aLgebra
 
 */
 
@@ -182,6 +182,7 @@ int main() {
     Uint64 time = SDL_GetTicks();
     float dt = 0.0f;
     unordered_map<SDL_Keycode, bool> key_pressed;
+    SDL_SetWindowRelativeMouseMode(window, true);
 
     Player plr;
     plr.p = glm::vec3(0.0f);
@@ -207,6 +208,8 @@ int main() {
         
         SDL_GL_SwapWindow(window);
 
+        float dmx = 0.0f;
+        float dmy = 0.0f;
         glm::vec3 move(0.0f);
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_EVENT_QUIT)
@@ -215,6 +218,9 @@ int main() {
                 key_pressed[ev.key.key] = true;
             } else if (ev.type == SDL_EVENT_KEY_UP) {
                 key_pressed[ev.key.key] = false;
+            } else if (ev.type == SDL_EVENT_MOUSE_MOTION) {
+                dmx = ev.motion.xrel;
+                dmy = ev.motion.yrel;
             }
         }
 
@@ -233,15 +239,15 @@ int main() {
         if (key_pressed[SDLK_ESCAPE])
             quit = true;
         
-        glm::mat4 plr_rotate(1.0f);
-        plr_rotate = glm::rotate(plr_rotate, plr.yaw, {0.0f, 1.0f, 0.0f});
-        plr_rotate = glm::rotate(plr_rotate, plr.pitch, {1.0f, 0.0f, 0.0f});
-        plr.v = plr_rotate * glm::vec4(move, 0.0f);
-        plr.p += plr.v;
-
-        cout << plr.p.x << " " << plr.p.y << " " << plr.p.z << endl;
+        plr.yaw -= (dmx/wh)*PI;
+        plr.pitch -= (dmy/wh)*PI;
         
-        glm::mat4 view_mat = plr_rotate;
+        glm::mat4 yawrot = glm::rotate(glm::mat4(1.0f), plr.yaw, {0.0f, 1.0f, 0.0f});
+        plr.p += yawrot * glm::vec4(move, 0.0f);
+
+        glm::mat4 view_mat(1.0f);
+        view_mat = glm::rotate(view_mat, -plr.pitch, {1.0f, 0.0f, 0.0f});
+        view_mat = glm::rotate(view_mat, -plr.yaw, {0.0f, 1.0f, 0.0f});
         view_mat = glm::translate(view_mat, -plr.p);
         glm::mat4 project_mat = glm::mat4(1.0f);
         project_mat = glm::perspective(plr.fov/2, (float)ww/wh, 0.01f, 100.0f);
