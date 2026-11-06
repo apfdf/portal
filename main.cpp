@@ -106,6 +106,7 @@ struct Player {
     float pitch;
     float base_vel;
     float fov;
+    float r;
 
 };
 
@@ -114,6 +115,76 @@ struct Portal {
     glm::mat3 orientation;
 
 };
+
+// 2d polygoner som spelaren kan kollidera med.
+// tar in koordinater för hörnen, texture koordinater. (ha stor texturemap?)
+// dela in i trianglar för att göra kollisionsdetektion enklare (och till rendering)
+struct PhysTriangle {
+
+    glm::vec3 a;
+    glm::vec3 b;
+    glm::vec3 c;
+
+    glm::vec2 ta;
+    glm::vec2 tb;
+    glm::vec2 tc;
+
+    glm::vec3 normal;
+    bool is_floor;
+    float area;
+
+    PhysTriangle(
+        glm::vec3 a, 
+        glm::vec3 b, 
+        glm::vec3 c,
+        glm::vec2 ta = glm::vec2(0.0f),
+        glm::vec2 tb = glm::vec2(0.0f),
+        glm::vec2 tc = glm::vec2(0.0f)
+    ) : a(a), b(b), c(c), ta(ta), tb(tb), tc(tc) {
+
+        normal = glm::normalize(glm::cross(b-a, c-a));
+        glm::vec3 up_vec = {0.0f, 1.0f, 0.0f};
+        // is_floor <=> angle between floor_vec and normal
+        is_floor = abs(glm::dot(normal, up_vec)) <= cos(PI/2);
+        area = glm::length(glm::cross(b-a, c-a))/2;
+
+    }
+
+};
+
+struct PhysObject {
+
+    vector<PhysTriangle> triangles;
+
+};
+
+pair<bool, glm::vec3> collide_point(PhysTriangle& tri, glm::vec3 x, glm::vec3 y) {
+
+    // check if x is not in triangle plane
+    float xdotsign = glm::dot(tri.normal, x-tri.a);
+    xdotsign /= abs(xdotsign);
+    float ydotsign = glm::dot(tri.normal, y-tri.a);
+    ydotsign /= abs(ydotsign);
+    if (xdotsign == ydotsign)
+        return {false, glm::vec3(0.0f)};
+
+    // check if point in plane between x and y is in triangle
+    float t = glm::dot(tri.a-x, tri.normal)/glm::dot(y-x, tri.normal);
+    glm::vec3 p = x + t*(y-x);
+
+    // går att göra snabbare utan sqrt
+    float s = 0.0f;
+    s += glm::length(glm::cross(p-tri.a, p-tri.b))/2;
+    s += glm::length(glm::cross(p-tri.b, p-tri.c))/2;
+    s += glm::length(glm::cross(p-tri.c, p-tri.a))/2;
+
+    if (s == tri.area) {
+        return {true, p};
+    } else {
+        return {false, glm::vec3(0.0f)};
+    }
+
+}
 
 int main() {
 
@@ -138,17 +209,26 @@ int main() {
     gladLoadGL();
 
     SDL_GL_SetSwapInterval(1);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
 
     glad_glViewport(0, 0, ww, wh);
     glad_glClearColor(0.0f, 0.5f, 1.0f, 0.0f);
 
-    vector<float> vertices = {
-        0.0f, 0.0f, 0.0f,
-        1.0f, 1.0f, 0.0f,
-        0.0f, 1.0f, 0.0f
-    };
+    vector<PhysTriangle> triangles;
+    triangles.push_back(PhysTriangle({0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, -1.0f}, {0.0f, 1.0f, -1.0f}));
+    triangles.push_back(PhysTriangle({0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, -1.0f}, {1.0f, 0.0f, -1.0f}));
+
+    vector<float> vertices;
+    for (PhysTriangle& tri : triangles) {
+        vertices.push_back(tri.a.x);
+        vertices.push_back(tri.a.y);
+        vertices.push_back(tri.a.z);
+        vertices.push_back(tri.b.x);
+        vertices.push_back(tri.b.y);
+        vertices.push_back(tri.b.z);
+        vertices.push_back(tri.c.x);
+        vertices.push_back(tri.c.y);
+        vertices.push_back(tri.c.z);
+    }
 
     // shader program setup
     ShaderProgram default_program;
@@ -190,6 +270,7 @@ int main() {
     plr.pitch = 0.0f;
     plr.base_vel = 1.0f;
     plr.fov = PI/2;
+    plr.r = 0.2f;
 
     bool quit = false;
     SDL_Event ev;
@@ -243,7 +324,20 @@ int main() {
         plr.pitch -= (dmy/wh)*PI;
         
         glm::mat4 yawrot = glm::rotate(glm::mat4(1.0f), plr.yaw, {0.0f, 1.0f, 0.0f});
-        plr.p += yawrot * glm::vec4(move, 0.0f);
+        plr.v = yawrot * glm::vec4(move, 0.0f);
+        plr.p += plr.v;
+
+        // collision
+        if (plr.v != glm::vec3(0.0f)) {
+            for (PhysTriangle& tri : triangles) {
+                auto [collides, x] = collide_point(tri, plr.p, plr.p-plr.v);
+                if (collides) {
+                    cout << "collision detected" << endl;
+                    plr.p = x;
+                }
+            }
+        }
+        
 
         glm::mat4 view_mat(1.0f);
         view_mat = glm::rotate(view_mat, -plr.pitch, {1.0f, 0.0f, 0.0f});

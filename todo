@@ -1,5 +1,4 @@
 TODO:
-- kunna rendera trianglar bara (modeller?)
-- kontroller
+- rendera månghörningar och fixa kollisionsdetektion till dem
 - portaler med interaktion med spelaren
 - rendera med bitmasks + rekursion?
