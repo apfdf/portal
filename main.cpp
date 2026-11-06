@@ -158,7 +158,7 @@ struct PhysObject {
 
 };
 
-pair<bool, glm::vec3> collide_point(PhysTriangle& tri, glm::vec3 x, glm::vec3 y) {
+pair<bool, glm::vec3> collide_point(PhysTriangle& tri, glm::vec3 x, glm::vec3 y, float r) {
 
     // check if x is not in triangle plane
     float xdotsign = glm::dot(tri.normal, x-tri.a);
@@ -183,6 +183,27 @@ pair<bool, glm::vec3> collide_point(PhysTriangle& tri, glm::vec3 x, glm::vec3 y)
     } else {
         return {false, glm::vec3(0.0f)};
     }
+
+}
+
+pair<bool, glm::vec3> collide_dif(PhysTriangle& tri, glm::vec3 p, float r) {
+
+    glm::vec3 x = p + tri.normal*r;
+    if ((glm::dot(tri.normal, p-tri.a) < 0.0f) == (glm::dot(tri.normal, x-tri.a) < 0.0f))
+        x = p - tri.normal*r;
+    if ((glm::dot(tri.normal, p-tri.a) < 0.0f) == (glm::dot(tri.normal, x-tri.a) < 0.0f))
+        return {false, glm::vec3(0.0f)};
+    
+    glm::vec3 intersect = p + (glm::dot(tri.a-p, tri.normal)/glm::dot(x-p, tri.normal))*(x-p);
+    float s = 0.0f;
+    s += glm::length(glm::cross(intersect-tri.a, intersect-tri.b))/2;
+    s += glm::length(glm::cross(intersect-tri.b, intersect-tri.c))/2;
+    s += glm::length(glm::cross(intersect-tri.c, intersect-tri.a))/2;
+
+    if (s == tri.area)
+        return {true, intersect-x};
+    else
+        return {false, glm::vec3(0.0f)};
 
 }
 
@@ -330,10 +351,10 @@ int main() {
         // collision
         if (plr.v != glm::vec3(0.0f)) {
             for (PhysTriangle& tri : triangles) {
-                auto [collides, x] = collide_point(tri, plr.p, plr.p-plr.v);
+                auto [collides, adjust] = collide_dif(tri, plr.p, plr.r);
                 if (collides) {
-                    cout << "collision detected" << endl;
-                    plr.p = x;
+                    cout << "collision detected, " << adjust.x << " " << adjust.y << " " << adjust.z << endl;
+                    plr.p += adjust;
                 }
             }
         }
