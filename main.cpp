@@ -16,6 +16,7 @@ glm är linjär aLgebra
 using namespace std;
 
 #define PI 3.14159265359
+#define FUZZ 0.1f
 
 GLint compileShader(const char* filename, GLenum type) {
 
@@ -104,9 +105,13 @@ struct Player {
     glm::vec3 v;
     float yaw;
     float pitch;
+    float base_acc;
     float base_vel;
+    float fall_vel;
     float fov;
     float r;
+    bool floor_contact;
+    bool wall_contact;
 
 };
 
@@ -145,7 +150,10 @@ struct PhysTriangle {
         normal = glm::normalize(glm::cross(b-a, c-a));
         glm::vec3 up_vec = {0.0f, 1.0f, 0.0f};
         // is_floor <=> angle between floor_vec and normal
-        is_floor = abs(glm::dot(normal, up_vec)) <= cos(PI/2);
+        is_floor = abs(glm::dot(normal, up_vec)) >= cos(PI/4);
+        if (!is_floor) {
+            cout << "test" << endl;
+        }
         area = glm::length(glm::cross(b-a, c-a))/2;
 
     }
@@ -158,32 +166,11 @@ struct PhysObject {
 
 };
 
-pair<bool, glm::vec3> collide_point(PhysTriangle& tri, glm::vec3 x, glm::vec3 y, float r) {
-
-    // check if x is not in triangle plane
-    float xdotsign = glm::dot(tri.normal, x-tri.a);
-    xdotsign /= abs(xdotsign);
-    float ydotsign = glm::dot(tri.normal, y-tri.a);
-    ydotsign /= abs(ydotsign);
-    if (xdotsign == ydotsign)
-        return {false, glm::vec3(0.0f)};
-
-    // check if point in plane between x and y is in triangle
-    float t = glm::dot(tri.a-x, tri.normal)/glm::dot(y-x, tri.normal);
-    glm::vec3 p = x + t*(y-x);
-
-    // går att göra snabbare utan sqrt
-    float s = 0.0f;
-    s += glm::length(glm::cross(p-tri.a, p-tri.b))/2;
-    s += glm::length(glm::cross(p-tri.b, p-tri.c))/2;
-    s += glm::length(glm::cross(p-tri.c, p-tri.a))/2;
-
-    if (s == tri.area) {
-        return {true, p};
-    } else {
-        return {false, glm::vec3(0.0f)};
-    }
-
+// projection of v on u
+glm::vec3 proj(glm::vec3 u, glm::vec3 v) {
+    if (glm::length(u) == 0.0f || glm::length(v) == 0.0f)
+        return glm::vec3(0.0f);
+    return (glm::dot(u, v)/(glm::length(u)*glm::length(v)))*u;
 }
 
 pair<bool, glm::vec3> collide_dif(PhysTriangle& tri, glm::vec3 p, float r) {
@@ -194,13 +181,22 @@ pair<bool, glm::vec3> collide_dif(PhysTriangle& tri, glm::vec3 p, float r) {
     if ((glm::dot(tri.normal, p-tri.a) < 0.0f) == (glm::dot(tri.normal, x-tri.a) < 0.0f))
         return {false, glm::vec3(0.0f)};
     
-    glm::vec3 intersect = p + (glm::dot(tri.a-p, tri.normal)/glm::dot(x-p, tri.normal))*(x-p);
+    // vektorn som sfären justeras längs
+    glm::vec3 v(0.0f);
+    if (tri.is_floor) {
+        v = {0.0f, 1.0f, 0.0f};
+    } else {
+        // v = normal of triangle projected to xz-plane
+        v = tri.normal - proj({0.0f, 1.0f, 0.0f}, tri.normal);
+    }
+
+    glm::vec3 intersect = p + (glm::dot(tri.a-p, tri.normal)/glm::dot(v, tri.normal))*v;
     float s = 0.0f;
     s += glm::length(glm::cross(intersect-tri.a, intersect-tri.b))/2;
     s += glm::length(glm::cross(intersect-tri.b, intersect-tri.c))/2;
     s += glm::length(glm::cross(intersect-tri.c, intersect-tri.a))/2;
 
-    if (s == tri.area)
+    if (abs(s-tri.area) < FUZZ)
         return {true, intersect-x};
     else
         return {false, glm::vec3(0.0f)};
@@ -235,8 +231,10 @@ int main() {
     glad_glClearColor(0.0f, 0.5f, 1.0f, 0.0f);
 
     vector<PhysTriangle> triangles;
-    triangles.push_back(PhysTriangle({0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, -1.0f}, {0.0f, 1.0f, -1.0f}));
-    triangles.push_back(PhysTriangle({0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, -1.0f}, {1.0f, 0.0f, -1.0f}));
+    triangles.push_back(PhysTriangle({0.0f, 0.0f, -1.0f}, {1.0f, -1.0f, -1.0f}, {0.0f, -1.0f, -1.0f}));
+    triangles.push_back(PhysTriangle({0.0f, 0.0f, -1.0f}, {1.0f, -1.0f, -1.0f}, {1.0f, 0.0f, -1.0f}));
+    triangles.push_back(PhysTriangle({4.0f, -1.0f, 4.0f}, {4.0f, -1.0f, -4.0f}, {-4.0f, -1.0f, -4.0f}));
+    triangles.push_back(PhysTriangle({4.0f, -1.0f, 4.0f}, {-4.0f, -1.0f, 4.0f}, {-4.0f, -1.0f, -4.0f}));
 
     vector<float> vertices;
     for (PhysTriangle& tri : triangles) {
@@ -287,11 +285,23 @@ int main() {
 
     Player plr;
     plr.p = glm::vec3(0.0f);
+    plr.v = glm::vec3(0.0f);
     plr.yaw = 0.0f;
     plr.pitch = 0.0f;
-    plr.base_vel = 1.0f;
+    plr.base_acc = 100.0f;
+    plr.base_vel = 2.0f;
+    plr.fall_vel = 2.0f;
     plr.fov = PI/2;
-    plr.r = 0.2f;
+    plr.r = 0.5f;
+    plr.floor_contact = false;
+    plr.wall_contact = false;
+
+    float surface_f = 10.0f;
+    float air_f = 0.2f;
+    float g = 9.82f;
+
+    // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glEnable(GL_DEPTH_TEST);
 
     bool quit = false;
     SDL_Event ev;
@@ -299,7 +309,7 @@ int main() {
         
         time = SDL_GetTicks();
 
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         
         glUseProgram(default_program.id);
         glBindVertexArray(VAO);
@@ -317,6 +327,9 @@ int main() {
             if (ev.type == SDL_EVENT_QUIT)
                 quit = true;
             if (ev.type == SDL_EVENT_KEY_DOWN) {
+                if (ev.key.key == SDLK_SPACE && plr.floor_contact) {
+                    plr.v.y = 2*g;
+                }
                 key_pressed[ev.key.key] = true;
             } else if (ev.type == SDL_EVENT_KEY_UP) {
                 key_pressed[ev.key.key] = false;
@@ -327,38 +340,75 @@ int main() {
         }
 
         if (key_pressed[SDLK_W])
-            move.z -= plr.base_vel*dt;
+            move.z -= plr.base_acc;
         if (key_pressed[SDLK_S])
-            move.z += plr.base_vel*dt;
+            move.z += plr.base_acc;
         if (key_pressed[SDLK_A])
-            move.x -= plr.base_vel*dt;
+            move.x -= plr.base_acc;
         if (key_pressed[SDLK_D])
-            move.x += plr.base_vel*dt;
-        if (key_pressed[SDLK_SPACE])
-            move.y += plr.base_vel*dt;
-        if (key_pressed[SDLK_LSHIFT])
-            move.y -= plr.base_vel*dt;
+            move.x += plr.base_acc;
+        if (key_pressed[SDLK_SPACE] && plr.floor_contact)
+            plr.v.y = 2*g;
         if (key_pressed[SDLK_ESCAPE])
             quit = true;
+            
+        float yawdif = (dmx/wh)*PI;
+        float pitchdif = (dmy/wh)*PI;
+        plr.yaw -= yawdif;
+        plr.pitch -= pitchdif;
         
-        plr.yaw -= (dmx/wh)*PI;
-        plr.pitch -= (dmy/wh)*PI;
-        
-        glm::mat4 yawrot = glm::rotate(glm::mat4(1.0f), plr.yaw, {0.0f, 1.0f, 0.0f});
-        plr.v = yawrot * glm::vec4(move, 0.0f);
-        plr.p += plr.v;
+        glm::mat4 difrot = glm::rotate(glm::mat4(1.0f), yawdif, {0.0f, 1.0f, 0.0f});
+        glm::mat4 totrot = glm::rotate(glm::mat4(1.0f), plr.yaw, {0.0f, 1.0f, 0.0f});
+        plr.v = difrot * glm::vec4(plr.v, 0.0f);
+        plr.v += totrot * glm::vec4(move, 0.0f) * dt;
+        plr.v.y -= g*dt;
+
+        // friction
+        float xz_f = (plr.floor_contact) ? surface_f : air_f;
+        glm::vec3 xz_v = {plr.v.x, 0.0f, plr.v.z};
+        if (xz_v != glm::vec3(0.0f)) {
+            glm::vec3 friction = glm::normalize(xz_v)*xz_f*dt;
+            if (glm::length(friction) < glm::length(xz_v))
+                plr.v -= friction;
+            else
+                plr.v -= xz_v;
+            xz_v = {plr.v.x, 0.0f, plr.v.z};
+            if (glm::length(xz_v) > plr.base_vel) {
+                xz_v = glm::normalize(xz_v)*plr.base_vel;
+                plr.v.x = xz_v.x;
+                plr.v.z = xz_v.z;
+            }
+        }
+        glm::vec3 y_v = {0.0f, plr.v.y, 0.0f};
+        if (y_v != glm::vec3(0.0f)) {
+            if (abs(plr.v.y) > plr.fall_vel) {
+                plr.v.y = ((plr.v.y)/abs(plr.v.y))*plr.fall_vel;
+            }
+        }
+
+        plr.v.y = max(plr.v.y, -2.0f);
+        plr.v.y = min(plr.v.y, 2.0f);
+
+        plr.p += plr.v*dt;
 
         // collision
+        plr.floor_contact = false;
+        plr.wall_contact = false;
         if (plr.v != glm::vec3(0.0f)) {
             for (PhysTriangle& tri : triangles) {
                 auto [collides, adjust] = collide_dif(tri, plr.p, plr.r);
                 if (collides) {
-                    cout << "collision detected, " << adjust.x << " " << adjust.y << " " << adjust.z << endl;
+                    if (tri.is_floor) {
+                        plr.floor_contact = true;
+                        plr.v.y = 0.0f;
+                    } else {
+                        plr.wall_contact = true;
+                        plr.v -= proj(adjust, plr.v);
+                    }
                     plr.p += adjust;
                 }
             }
         }
-        
 
         glm::mat4 view_mat(1.0f);
         view_mat = glm::rotate(view_mat, -plr.pitch, {1.0f, 0.0f, 0.0f});
